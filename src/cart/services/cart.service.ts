@@ -7,23 +7,19 @@ import { Cart } from '../models';
 
 const CART_ID = "1eb136f4-dda4-4b89-9b27-0ae548237b84"; // TODO: remove stub and add auth
 
-
 @Injectable()
 export class CartService {
   private userCarts: Record<string, Cart> = {};
 
   async findByUserId(userId: string): Promise<Cart> {
-    console.log("init client");
     const dbClient = await this.getClient();
-    console.log("client is created");
-
     const itemsQuery = {
       text: `SELECT * FROM cart_items WHERE cart_id = $1`,
       values: [CART_ID],
     };
 
     const items = await dbClient.query(itemsQuery);
-    console.log("search is finished");
+
     return {
       id: CART_ID,
       items: items?.rows,
