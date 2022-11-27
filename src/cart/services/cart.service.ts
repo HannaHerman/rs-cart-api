@@ -1,66 +1,77 @@
 import { Injectable } from '@nestjs/common';
 import { Client } from 'pg';
 
-import { v4 } from 'uuid';
-
 import { Cart } from '../models';
-
-const CART_ID = "1eb136f4-dda4-4b89-9b27-0ae548237b84"; // TODO: remove stub and add auth
 
 @Injectable()
 export class CartService {
   private userCarts: Record<string, Cart> = {};
 
-  async findByUserId(userId: string): Promise<Cart> {
+  async findByUserId(userId: string, cartId: string): Promise<Cart> {
     const dbClient = await this.getClient();
+    const cartQuery = {
+      text: `SELECT * FROM carts WHERE id = $1`,
+      values: [cartId],
+    };
+    const cart = await dbClient.query(cartQuery);
+
+    if(!cart.rows?.length) {
+      return
+    }
+
     const itemsQuery = {
       text: `SELECT * FROM cart_items WHERE cart_id = $1`,
-      values: [CART_ID],
+      values: [cartId],
     };
 
     const items = await dbClient.query(itemsQuery);
+    dbClient.end();
 
     return {
-      id: CART_ID,
+      id: cartId,
       items: items?.rows,
     };
   }
 
-  createByUserId(userId: string) {
-    const id = v4(v4());
-    const userCart = {
-      id,
+  async createByUserId(userId: string): Promise<Cart> {
+    const dbClient = await this.getClient();
+    const createDate = new Date().toISOString().split("T")[0];
+    const query = `
+        insert into carts (created_at, updated_at) values
+        ('${createDate}', '${createDate}')
+        returning id;
+    `;
+    const { rows } = await dbClient.query(query);
+
+    return {
+      id: rows[0].id,
       items: [],
     };
-
-    this.userCarts[userId] = userCart;
-
-    return userCart;
   }
 
-  async findOrCreateByUserId(userId: string): Promise<Cart> {
-    const userCart = await this.findByUserId(userId);
+  async findOrCreateByUserId(userId: string, cartId: string): Promise<Cart> {
+    const userCart = await this.findByUserId(userId, cartId);
 
     if (userCart) {
       return userCart;
     }
 
-    return this.createByUserId(userId);
+    return await this.createByUserId(userId);
   }
 
-  async updateByUserId(userId: string, body: any): Promise<Cart> {
+  async updateByUserId(userId: string, body: any, cartId: string): Promise<Cart> {
     const dbClient = await this.getClient();
     const { product } = body;
     const findQuery = {
       text: 'SELECT * FROM cart_items WHERE cart_id = $1 AND product_id = $2',
-      values: [CART_ID, body?.product?.product_id],
+      values: [cartId, body?.product?.product_id],
     };
 
     const item = await dbClient.query(findQuery);
 
     const updateQuery = {
       text: "",
-      values: [CART_ID, product?.product_id, product?.count],
+      values: [cartId, product?.product_id, product?.count],
     };
 
     if (item.rows.length) {
@@ -74,14 +85,25 @@ export class CartService {
     }
 
     const updatedCart = await dbClient.query(updateQuery);
+    dbClient.end();
 
     return {
-      id: CART_ID,
+      id: cartId,
       items: updatedCart.rows,
     };
   }
 
-  removeByUserId(userId): void {
+  async removeByUserId(userId: string, cartId: string): Promise<void> {
+    const dbClient = await this.getClient();
+    const queryCartItems = `delete from cart_items where cart_items.cart_id='${cartId}';`;
+    const queryCarts = `delete from carts where carts.id='${cartId}';`;
+
+    await Promise.all([
+      await dbClient.query(queryCartItems),
+      await dbClient.query(queryCarts)
+    ]);
+
+    dbClient.end();
     this.userCarts[userId] = null;
   }
 
